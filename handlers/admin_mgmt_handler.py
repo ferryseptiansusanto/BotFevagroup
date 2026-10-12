@@ -1,7 +1,9 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.user_manager import require_role, Role, load_user_db, save_user_db, get_user_role
-from utils.item_manager import add_new_item, rename_item, delete_item, load_items
+from utils.item_manager import add_new_item, rename_item, delete_item, load_items, reset_master_items
+from utils.excel_manager import reset_excel_data, get_filepath
+import os
 
 @require_role(Role.SUPERADMIN)
 async def set_role_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,7 +184,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/id</code> : Melihat ID Telegram (Ketik langsung atau reply pesan orang)\n"
         "• <code>/listbarang</code> : Melihat daftar lengkap Master Data Barang\n"
         "• <code>/getlogs</code> : Mengunduh file Excel laporan grup ini\n\n"
-
+        "• <code>/rekap</code> : Merekap seluruh aktivitas berdasar nama barang dan satuan lalu menampilkan hasil rekap digrup ini\n\n"
         "🟡 <b>KONTRIBUTOR (User Input)</b>\n"
         "• <code>/tambah</code> : Memasukkan data ke Excel.\n"
         "  <i>Format: /tambah Ket, Sat, Jml</i> (Gunakan <code>;</code> untuk banyak input sekaligus)\n"
@@ -199,7 +201,38 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔴 <b>SUPERADMIN</b>\n"
         "• <code>/setrole</code> : Mengubah hak akses pengguna.\n"
         "  <i>Format: /setrole &lt;User_ID&gt; &lt;user_admin|user_input|viewer&gt;</i>"
+        "• <code>/resetdatabase</code> : Menghapus data.\n"
+        "  <i>Format: /resetdatabase &lt;excel&gt; &lt;excel|master&gt;</i>"
     )
 
     # Menggunakan HTML dan menerjemahkan simbol < > menjadi &lt; dan &gt;
     await update.effective_message.reply_text(pesan, parse_mode="HTML")
+
+
+@require_role(Role.SUPERADMIN)
+async def reset_database_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    args = context.args
+
+    # Proteksi: Minta konfirmasi jika dipanggil tanpa argumen yang jelas
+    if not args or args[0].lower() not in ["excel", "master"]:
+        pesan = (
+            "⚠️ *PERINGATAN: TINDAKAN BERBAHAYA (SUPERADMIN ONLY)* ⚠️\n\n"
+            "Perintah ini akan menghapus data secara permanen. "
+            "Silakan pilih database mana yang ingin direset:\n\n"
+            "1. `/resetdatabase excel` - Menghapus semua riwayat input di Excel grup ini (Header dipertahankan).\n"
+            "2. `/resetdatabase master` - Menghapus SEMUA daftar Master Data Barang."
+        )
+        return await update.effective_message.reply_text(pesan, parse_mode="Markdown")
+
+    target = args[0].lower()
+
+    if target == "excel":
+        sukses, pesan = await reset_excel_data(chat.id)
+        await update.effective_message.reply_text(f"📊 *Reset Excel Grup:*\n{pesan}", parse_mode="Markdown")
+
+    elif target == "master":
+        sukses, pesan = reset_master_items()
+        await update.effective_message.reply_text(f"📦 *Reset Master Barang:*\n{pesan}", parse_mode="Markdown")
+
+

@@ -81,3 +81,11 @@ def delete_item(item_name: str) -> tuple[bool, str]:
         json.dump({"barang": items}, f, indent=2)
     return True, f"Barang '{deleted_item}' berhasil dihapus."
 
+def reset_master_items() -> tuple[bool, str]:
+    try:
+        # Menimpa file dengan dictionary barang yang kosong
+        with open(ITEMS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"barang": []}, f, indent=2)
+        return True, "Master Data Barang berhasil dikosongkan secara keseluruhan."
+    except Exception as e:
+        return False, f"Terjadi kesalahan saat mereset Master Data: {e}"

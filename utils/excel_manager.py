@@ -2,6 +2,7 @@ import os
 import re
 import json
 import asyncio
+import shutil
 from datetime import datetime
 from openpyxl import Workbook, load_workbook
 from config.settings import DATA_DIR, GROUP_REGISTRY_FILE
@@ -36,60 +37,231 @@ async def setup_excel(chat_id: int, group_title: str) -> str:
             wb = Workbook()
             ws = wb.active
             ws.title = "Activity Logs"
-            # Header baru sesuai permintaan
-            ws.append(["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Keterangan", "Satuan", "Jumlah"])
+            # HEADER FINAL: 9 Kolom (Termasuk Detail di ujung kanan)
+            ws.append(["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Keterangan", "Satuan", "Jumlah", "Detail"])
             wb.save(filepath)
 
         registry[str(chat_id)] = filename
         save_registry(registry)
         return filepath
 
-async def append_data(chat_id: int, user_id: int, username: str, full_name: str, level: str, keterangan: str, satuan: str, jumlah: str) -> bool:
+
+async def append_data(chat_id: int, user_id: int, username: str, full_name: str, level: str, keterangan: str,
+                      satuan: str, jumlah: str, detail: str = "-") -> tuple[bool, int]:
     filepath = get_filepath(chat_id)
-    if not filepath or not os.path.exists(filepath): return False
+    if not filepath or not os.path.exists(filepath):
+        return False, 0
 
     async with excel_lock:
         wb = load_workbook(filepath)
         ws = wb.active
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Memasukkan data ke 8 kolom
-        ws.append([timestamp, str(user_id), f"@{username}" if username else "-", full_name, level, keterangan, satuan, jumlah])
-        wb.save(filepath)
-        return True
 
-async def edit_data(chat_id: int, row: int, keterangan: str, satuan: str, jumlah: str, require_same_day: bool = False) -> tuple[bool, str]:
+        # MENYIMPAN KE 9 KOLOM: Termasuk variabel 'detail'
+        ws.append(
+            [timestamp, str(user_id), f"@{username}" if username else "-", full_name, level, keterangan, satuan, jumlah,
+             detail])
+        wb.save(filepath)
+
+        # MENGEMBALIKAN ID BARIS: (Baris Excel - 1)
+        user_row_id = ws.max_row - 1
+        return True, user_row_id
+
+
+async def edit_data(chat_id: int, row: int, keterangan: str, satuan: str, jumlah: str, detail: str,
+                    require_same_day: bool = False) -> tuple[bool, str]:
     filepath = get_filepath(chat_id)
-    if not filepath or not os.path.exists(filepath): return False, "File log tidak ditemukan."
+    if not filepath or not os.path.exists(filepath):
+        return False, "File log tidak ditemukan."
 
     async with excel_lock:
         wb = load_workbook(filepath)
         ws = wb.active
-        if row <= 1 or row > ws.max_row: return False, "Nomor baris tidak valid."
 
+        # TRIK MATEMATIKA: Kompensasi Header
+        excel_row = row + 1
+
+        if excel_row <= 1 or excel_row > ws.max_row:
+            return False, f"Nomor baris tidak valid. Saat ini hanya ada data dari baris 1 hingga {ws.max_row - 1}."
+
+        # VALIDASI TANGGAL (HARI EDIT)
         if require_same_day:
-            entry_ts = str(ws.cell(row=row, column=1).value)
-            try:
-                entry_date = datetime.strptime(entry_ts, "%Y-%m-%d %H:%M:%S").date()
-                if entry_date != datetime.now().date():
-                    return False, "User_Input hanya boleh mengedit data hari yang sama."
-            except Exception:
-                pass
+            cell_value = ws.cell(row=excel_row, column=1).value
+            if not cell_value:
+                return False, "Baris yang dipilih tidak memiliki data tanggal."
 
-        # Timpa kolom 6 (Keterangan), 7 (Satuan), dan 8 (Jumlah)
-        ws.cell(row=row, column=6, value=f"[Edited] {keterangan}")
-        ws.cell(row=row, column=7, value=satuan)
-        ws.cell(row=row, column=8, value=jumlah)
+            try:
+                if isinstance(cell_value, datetime):
+                    entry_date = cell_value.date()
+                else:
+                    entry_date = datetime.strptime(str(cell_value).strip(), "%Y-%m-%d %H:%M:%S").date()
+
+                try:
+                    max_days = int(os.getenv("MAX_EDIT_DAYS", 0))
+                except ValueError:
+                    max_days = 0
+
+                current_date = datetime.now().date()
+                delta_days = (current_date - entry_date).days
+
+                if delta_days > max_days:
+                    pesan_waktu = "HARI INI" if max_days == 0 else f"{max_days} HARI terakhir"
+                    return False, f"User Input hanya diizinkan mengedit data pada {pesan_waktu}."
+                elif delta_days < 0:
+                    return False, "Gagal: Data memiliki tanggal masa depan yang tidak valid."
+
+            except Exception:
+                return False, "Format tanggal pada baris tersebut tidak dapat divalidasi."
+
+        # EDIT 4 KOLOM UTAMA (Termasuk Detail di kolom ke-9)
+        ws.cell(row=excel_row, column=6, value=keterangan)
+        ws.cell(row=excel_row, column=7, value=satuan)
+        ws.cell(row=excel_row, column=8, value=jumlah)
+        ws.cell(row=excel_row, column=9, value=detail)
         wb.save(filepath)
+
         return True, "Sukses"
 
-async def delete_data(chat_id: int, row: int) -> bool:
+
+async def delete_data(chat_id: int, row: int) -> tuple[bool, str]:
     filepath = get_filepath(chat_id)
-    if not filepath or not os.path.exists(filepath): return False
+    if not filepath or not os.path.exists(filepath):
+        return False, "File log tidak ditemukan."
 
     async with excel_lock:
         wb = load_workbook(filepath)
         ws = wb.active
-        if row <= 1 or row > ws.max_row: return False
-        ws.delete_rows(row)
+
+        # TRIK MATEMATIKA: Kompensasi Header
+        excel_row = row + 1
+
+        if excel_row <= 1 or excel_row > ws.max_row:
+            return False, f"Nomor baris tidak valid. Saat ini hanya ada data dari baris 1 hingga {ws.max_row - 1}."
+
+        ws.delete_rows(excel_row)
         wb.save(filepath)
-        return True
+
+        return True, "Sukses"
+
+
+async def reset_excel_data(chat_id: int) -> tuple[bool, str]:
+    filepath = get_filepath(chat_id)
+    if not filepath or not os.path.exists(filepath):
+        return False, "File log Excel tidak ditemukan. Gunakan /setup terlebih dahulu."
+
+    async with excel_lock:
+        try:
+            wb = load_workbook(filepath)
+
+            # 1. Dapatkan nama sheet yang aktif (misal: "Activity Logs")
+            active_sheet_name = wb.active.title
+
+            # 2. Hapus sheet tersebut secara total untuk membuang semua data lama dan kotoran cache
+            del wb[active_sheet_name]
+
+            # 3. Buat ulang sheet-nya di urutan pertama (index=0)
+            ws = wb.create_sheet(title=active_sheet_name, index=0)
+
+            # 4. Tulis ulang Header format TERBARU (9 Kolom)
+            ws.append(
+                ["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Keterangan", "Satuan", "Jumlah",
+                 "Detail"])
+
+            wb.save(filepath)
+            return True, "Berhasil mereset Excel."
+
+        except Exception as e:
+            return False, f"Terjadi kesalahan saat mereset Excel: {e}"
+
+async def get_pivot_summary(chat_id: int) -> tuple[bool, dict | str]:
+    filepath = get_filepath(chat_id)
+    if not filepath or not os.path.exists(filepath):
+        return False, "File log tidak ditemukan. Belum ada data."
+
+    summary = {}
+    async with excel_lock:
+        wb = load_workbook(filepath, data_only=True)
+        ws = wb.active
+
+        # Mulai dari baris ke-2 untuk melewati Header
+        for row_data in ws_log.iter_rows(min_row=2, min_col=6, max_col=8, values_only=True):
+            keterangan, satuan, jumlah = row_data
+
+            # Abaikan baris jika keterangan atau jumlah kosong
+            if not keterangan or jumlah is None:
+                continue
+
+            # Konversi jumlah menjadi angka (float)
+            try:
+                jumlah_float = float(jumlah)
+            except (ValueError, TypeError):
+                continue
+
+            keterangan_str = str(keterangan).strip()
+            satuan_str = str(satuan).strip() if satuan else "-"
+
+            # Buat kunci gabungan Keterangan dan Satuan (misal: "aggra-kanan (ton)")
+            item_key = f"{keterangan_str} ({satuan_str})"
+
+            # Tambahkan ke dictionary
+            if item_key not in summary:
+                summary[item_key] = 0.0
+
+            summary[item_key] += jumlah_float
+
+    return True, summary
+
+
+async def generate_export_file(chat_id: int) -> tuple[bool, str]:
+    filepath = get_filepath(chat_id)
+    if not filepath or not os.path.exists(filepath):
+        return False, "File log tidak ditemukan. Pastikan /setup sudah dijalankan."
+
+    export_path = filepath.replace(".xlsx", "_Export.xlsx")
+
+    async with excel_lock:
+        try:
+            shutil.copy2(filepath, export_path)
+
+            wb = load_workbook(export_path)
+            ws_log = wb.active
+            summary = {}
+
+            for row_data in ws_log.iter_rows(min_row=2, min_col=6, max_col=8, values_only=True):
+                keterangan, satuan, jumlah = row_data
+
+                if not keterangan or jumlah is None:
+                    continue
+
+                try:
+                    jumlah_float = float(jumlah)
+                except (ValueError, TypeError):
+                    continue
+
+                keterangan_str = str(keterangan).strip()
+                satuan_str = str(satuan).strip() if satuan else "-"
+                item_key = (keterangan_str, satuan_str)
+
+                if item_key not in summary:
+                    summary[item_key] = 0.0
+                summary[item_key] += jumlah_float
+
+            if "Rekap" in wb.sheetnames:
+                del wb["Rekap"]
+
+            ws_rekap = wb.create_sheet(title="Rekap")
+            ws_rekap.append(["No", "Kode Barang", "Satuan", "Total Jumlah"])
+
+            sorted_keys = sorted(summary.keys(), key=lambda x: x[0].lower())
+            for index, (ket, sat) in enumerate(sorted_keys, start=1):
+                total = summary[(ket, sat)]
+                total_val = int(total) if total.is_integer() else total
+                ws_rekap.append([index, ket, sat, total_val])
+
+            wb.save(export_path)
+            wb.close()
+
+            return True, export_path
+
+        except Exception as e:
+            return False, str(e)
