@@ -40,7 +40,7 @@ async def setup_excel(chat_id: int, group_title: str) -> str:
             wb = Workbook()
             ws = wb.active
             ws.title = "Activity Logs"
-            # HEADER FINAL: 9 Kolom (Termasuk Detail di ujung kanan)
+            # HEADER FINAL: 10 Kolom (Termasuk Detail di ujung kanan)
             ws.append(["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Tipe", "Keterangan", "Satuan", "Jumlah", "Detail"])
             wb.save(filepath)
 
@@ -50,7 +50,7 @@ async def setup_excel(chat_id: int, group_title: str) -> str:
 
 
 async def append_data(chat_id: int, user_id: int, username: str, full_name: str, level: str, tipe_trx: str, keterangan: str,
-                      satuan: str, jumlah: str, detail: str = "-") -> tuple[bool, int]:
+                      satuan: str, jumlah: str, detail: str = "-", custom_timestamp: str = None) -> tuple[bool, int]:
     filepath = get_filepath(chat_id)
     if not filepath or not os.path.exists(filepath):
         return False, 0
@@ -58,7 +58,9 @@ async def append_data(chat_id: int, user_id: int, username: str, full_name: str,
     async with excel_lock:
         wb = load_workbook(filepath)
         ws = wb.active
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Gunakan custom_timestamp jika pengguna memberikan input @DDMMYYYY, jika tidak gunakan waktu sekarang
+        timestamp = custom_timestamp if custom_timestamp else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # MENYIMPAN KE 10 KOLOM: Termasuk variabel 'detail'
         ws.append(
@@ -160,11 +162,16 @@ async def reset_excel_data(chat_id: int) -> tuple[bool, str]:
             # 1. Dapatkan nama sheet yang aktif (misal: "Activity Logs")
             active_sheet_name = wb.active.title
 
-            # 2. Hapus sheet tersebut secara total untuk membuang semua data lama dan kotoran cache
+            # 2. Buat sheet baru sementara terlebih dahulu (agar workbook tidak pernah kosong)
+            ws_new = wb.create_sheet(title="Temp_Logs")
+
+            # 3. Hapus sheet lama
             del wb[active_sheet_name]
 
-            # 3. Buat ulang sheet-nya di urutan pertama (index=0)
-            ws = wb.create_sheet(title=active_sheet_name, index=0)
+            # 4. Ubah nama sheet baru menjadi nama sheet aslinya
+            ws_new.title = active_sheet_name
+            ws_new.insert_cols(1)  # Memastikan index di 0
+            ws = wb.active
 
             # 4. Tulis ulang Header format TERBARU (9 Kolom)
             ws.append(

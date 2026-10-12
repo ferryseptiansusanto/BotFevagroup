@@ -187,9 +187,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/rekap</code> : Merekap seluruh aktivitas berdasar nama barang dan satuan lalu menampilkan hasil rekap digrup ini\n\n"
         "🟡 <b>KONTRIBUTOR (User Input)</b>\n"
         "• <code>/tambah</code> : Memasukkan data ke Excel.\n"
-        "  <i>Format: /tambah Ket[Detail], Sat, Jml</i> (Gunakan <code>;</code> untuk banyak input sekaligus)\n"
+        "  <i>Format: /tambah Keterangan,Sat, Jml, (Detail)</i> (Gunakan <code>;</code> untuk banyak input sekaligus)\n"
         "• <code>/edit</code> : Mengubah data di baris tertentu.\n"
-        "  <i>Format: /edit &lt;baris&gt; Ket[Detail], Sat, Jml</i>\n\n"
+        "  <i>Format: /edit &lt;baris&gt; Keterangan, (Detail), Sat, Jml</i>\n\n"
 
         "🟠 <b>ADMIN GRUP (User Admin)</b>\n"
         "• <code>/setup</code> : Inisialisasi grup dan membuat file Excel baru\n"

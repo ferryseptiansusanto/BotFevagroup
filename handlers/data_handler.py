@@ -12,8 +12,8 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not raw_text:
         pesan_bantuan = (
             "⚠️ Format salah!\n\n"
-            "*Format:* `/tambah in/out, Kode Barang, Satuan, Jumlah [Detail]`\n"
-            "*Contoh:* `/tambah in, Semen Tonasa, Sak, 50 [Gudang A]`\n"
+            "*Format:* `/tambah in/out, Kode Barang, Satuan, Jumlah (Detail)`\n"
+            "*Contoh:* `/tambah in, Semen Tonasa, Sak, 50 (Gudang A)`\n"
             "*Multi:* `/tambah in, Semen Tonasa, Sak, 10; out, Semen Tonasa, Sak, 5`"
         )
         return await update.effective_message.reply_text(pesan_bantuan, parse_mode="Markdown")
@@ -29,7 +29,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for entry in entries:
         # --- PANGGIL FUNGSI PARSER ---
-        sukses_parse, tipe, keterangan, satuan, jumlah_final, detail, rumus_asli, err_msg = parse_item_input(entry)
+        sukses_parse, tipe, keterangan, satuan, jumlah_final, detail, rumus_asli, custom_ts, err_msg = parse_item_input(entry)
 
         if not sukses_parse:
             gagal += 1
@@ -42,13 +42,14 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
         sukses, row_id = await append_data(chat.id, user.id, user.username, user.full_name, role_name, tipe, keterangan,
-                                           satuan, jumlah_final, detail)
+                                           satuan, jumlah_final, detail, custom_ts)
 
         if sukses:
             tanda = "📥 IN" if tipe == "IN" else "📤 OUT"
             teks_detail = f" | {detail}" if detail != "-" else ""
             teks_rumus = f" [dari {rumus_asli}]" if rumus_asli else ""
-            berhasil_list.append(f"ID {row_id} | {tanda} : {keterangan} ({jumlah_final} {satuan}){teks_detail}{teks_rumus}")
+            teks_tgl = f" 🕒 {custom_ts[:10]}" if custom_ts else ""  # Indikator tanggal kustom
+            berhasil_list.append(f"ID {row_id} | {tanda} : {keterangan} ({jumlah_final} {satuan}){teks_detail}{teks_rumus}{teks_tgl}")
         else:
             gagal += 1
             pesan_error += f"\n- ❌ `{entry}` (Gagal simpan ke Excel)"
@@ -69,7 +70,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_role(Role.USER_INPUT)
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
-        return await update.effective_message.reply_text("Format: `/edit <ID> in/out, Kode Barang, Satuan, Jumlah [Detail]`", parse_mode="Markdown")
+        return await update.effective_message.reply_text("Format: `/edit <ID> in/out, Kode Barang, Satuan, Jumlah, (Detail)`", parse_mode="Markdown")
 
     try:
         row = int(context.args[0])
@@ -79,7 +80,7 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = " ".join(context.args[1:])
 
     # --- PANGGIL FUNGSI PARSER ---
-    sukses_parse, tipe, keterangan, satuan, jumlah_final, detail, rumus_asli, err_msg = parse_item_input(raw_text)
+    sukses_parse, tipe, keterangan, satuan, jumlah_final, detail, rumus_asli, custom_ts, err_msg = parse_item_input(raw_text)
 
     if not sukses_parse:
         return await update.effective_message.reply_text(f"⚠️ Gagal: {err_msg}", parse_mode="Markdown")
@@ -91,7 +92,7 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_role = get_user_role(update.effective_chat.id, update.effective_user.id)
     require_same_day = (user_role == Role.USER_INPUT)
 
-    sukses, pesan = await edit_data(update.effective_chat.id, row, tipe, keterangan, satuan, jumlah_final, detail,
+    sukses, pesan = await edit_data(update.effective_chat.id, row, tipe, keterangan, satuan, jumlah_final, detail, custom_ts,
                                     require_same_day)
 
     if sukses:
