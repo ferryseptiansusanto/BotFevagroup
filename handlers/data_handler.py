@@ -12,8 +12,9 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not raw_text:
         pesan_bantuan = (
             "⚠️ Format salah!\n\n"
-            "*Format:* `/tambah Barang, Satuan, Jumlah [Detail]`\n"
-            "*Contoh:* `/tambah Semen Tonasa, Sak, 10 [Gudang A]`"
+            "*Format:* `/tambah in/out, Kode Barang, Satuan, Jumlah [Detail]`\n"
+            "*Contoh:* `/tambah in, Semen Tonasa, Sak, 50 [Gudang A]`\n"
+            "*Multi:* `/tambah in, Semen Tonasa, Sak, 10; out, Semen Tonasa, Sak, 5`"
         )
         return await update.effective_message.reply_text(pesan_bantuan, parse_mode="Markdown")
 
@@ -28,7 +29,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for entry in entries:
         # --- PANGGIL FUNGSI PARSER ---
-        sukses_parse, keterangan, satuan, jumlah_final, detail, rumus_asli, err_msg = parse_item_input(entry)
+        sukses_parse, tipe, keterangan, satuan, jumlah_final, detail, rumus_asli, err_msg = parse_item_input(entry)
 
         if not sukses_parse:
             gagal += 1
@@ -40,13 +41,14 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pesan_error += f"\n- ❌ `{entry}` (Barang '{keterangan}' tidak terdaftar)"
             continue
 
-        sukses, row_id = await append_data(chat.id, user.id, user.username, user.full_name, role_name, keterangan,
+        sukses, row_id = await append_data(chat.id, user.id, user.username, user.full_name, role_name, tipe, keterangan,
                                            satuan, jumlah_final, detail)
 
         if sukses:
+            tanda = "📥 IN" if tipe == "IN" else "📤 OUT"
             teks_detail = f" | {detail}" if detail != "-" else ""
             teks_rumus = f" [dari {rumus_asli}]" if rumus_asli else ""
-            berhasil_list.append(f"ID {row_id} : {keterangan} ({jumlah_final} {satuan}){teks_detail}{teks_rumus}")
+            berhasil_list.append(f"ID {row_id} | {tanda} : {keterangan} ({jumlah_final} {satuan}){teks_detail}{teks_rumus}")
         else:
             gagal += 1
             pesan_error += f"\n- ❌ `{entry}` (Gagal simpan ke Excel)"
@@ -67,18 +69,17 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_role(Role.USER_INPUT)
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
-        return await update.effective_message.reply_text("Format: `/edit <baris> Barang, Satuan, Jumlah [Detail]`",
-                                                         parse_mode="Markdown")
+        return await update.effective_message.reply_text("Format: `/edit <ID> in/out, Kode Barang, Satuan, Jumlah [Detail]`", parse_mode="Markdown")
 
     try:
         row = int(context.args[0])
     except ValueError:
-        return
+        return await update.effective_message.reply_text("ID baris harus berupa angka.")
 
     raw_text = " ".join(context.args[1:])
 
     # --- PANGGIL FUNGSI PARSER ---
-    sukses_parse, keterangan, satuan, jumlah_final, detail, rumus_asli, err_msg = parse_item_input(raw_text)
+    sukses_parse, tipe, keterangan, satuan, jumlah_final, detail, rumus_asli, err_msg = parse_item_input(raw_text)
 
     if not sukses_parse:
         return await update.effective_message.reply_text(f"⚠️ Gagal: {err_msg}", parse_mode="Markdown")
@@ -90,55 +91,52 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_role = get_user_role(update.effective_chat.id, update.effective_user.id)
     require_same_day = (user_role == Role.USER_INPUT)
 
-    sukses, pesan = await edit_data(update.effective_chat.id, row, keterangan, satuan, jumlah_final, detail,
+    sukses, pesan = await edit_data(update.effective_chat.id, row, tipe, keterangan, satuan, jumlah_final, detail,
                                     require_same_day)
 
     if sukses:
+        tanda = "📥 IN" if tipe == "IN" else "📤 OUT"
         teks_rumus = f" [dari {rumus_asli}]" if rumus_asli else ""
         teks_detail = f" | {detail}" if detail != "-" else ""
-        msg = f"✅ Baris {row} berhasil diubah menjadi: {keterangan} ({jumlah_final} {satuan}){teks_detail}{teks_rumus}"
+        await update.effective_message.reply_text(f"✅ Baris ID {row} diubah: {tanda} {keterangan} ({jumlah_final} {satuan}){teks_detail}{teks_rumus}", parse_mode="Markdown")
     else:
-        msg = f"⛔ Gagal: {pesan}"
+        await update.effective_message.reply_text(f"⛔ Gagal: {pesan}", parse_mode="Markdown")
 
-    await update.effective_message.reply_text(msg, parse_mode="Markdown")
 @require_role(Role.USER_ADMIN)
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.effective_message.reply_text("Format: `/hapus <ID>`", parse_mode="Markdown")
     try:
         row = int(context.args[0])
-    except:
-        return await update.effective_message.reply_text("Format: `/hapus <baris>`", parse_mode="Markdown")
+    except ValueError:
+        return await update.effective_message.reply_text("ID baris harus berupa angka.")
 
-    sukses = await delete_data(update.effective_chat.id, row)
-    msg = f"🗑️ Baris {row} dihapus." if sukses else "⚠️ Gagal hapus data."
-    await update.effective_message.reply_text(msg)
+    if await delete_data(update.effective_chat.id, row):
+        await update.effective_message.reply_text(f"🗑️ Baris ID {row} berhasil dihapus.", parse_mode="Markdown")
+    else:
+        await update.effective_message.reply_text("⚠️ Gagal menghapus baris.", parse_mode="Markdown")
 
 
 @require_role(Role.VIEWER)
 async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
+    sukses, inventory = await get_pivot_summary(chat.id)
 
-    loading_msg = await update.effective_message.reply_text("⏳ Sedang menghitung rekapitulasi data...")
+    if not sukses or not inventory:
+        return await update.effective_message.reply_text("📉 Belum ada pergerakan stok barang.")
 
-    sukses, hasil = await get_pivot_summary(chat.id)
+    pesan = f"📦 *REKAPITULASI STOK: {chat.title}*\n"
+    pesan += "============================\n"
 
-    if not sukses:
-        return await loading_msg.edit_text(f"⚠️ {hasil}")
+    for (ket, sat), qty in sorted(inventory.items()):
+        total_in, total_out = qty["IN"], qty["OUT"]
+        sisa = total_in - total_out
 
-    if not hasil:
-        return await loading_msg.edit_text("📉 Belum ada data transaksi yang bisa direkap.")
+        def fmt(n): return f"{int(n):,}" if n.is_integer() else f"{n:,.2f}"
 
-    pesan = f"📊 *REKAPITULASI DATA: {chat.title}*\n"
-    pesan += "============================\n\n"
+        pesan += f"\n🔹 *{ket}* ({sat})\n"
+        pesan += f"   ├ Masuk  : `{fmt(total_in)}`\n"
+        pesan += f"   ├ Keluar : `{fmt(total_out)}`\n"
+        pesan += f"   └ *Saldo*  : *`{fmt(sisa)}`*\n"
 
-    # Mengurutkan berdasarkan nama barang (abjad)
-    for item_key in sorted(hasil.keys()):
-        total = hasil[item_key]
-
-        # Hilangkan angka .0 jika bilangan bulat murni (misal 280.0 jadi 280)
-        total_str = f"{int(total):,}" if total.is_integer() else f"{total:,.2f}"
-
-        pesan += f"📦 *{item_key}* : `{total_str}`\n"
-
-    # Hapus pesan loading dan kirim hasil akhir
-    await loading_msg.delete()
-    await update.effective_message.reply_text(pesan.strip(), parse_mode="Markdown")
+    await update.effective_message.reply_text(pesan, parse_mode="Markdown")

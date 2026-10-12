@@ -24,7 +24,9 @@ async def auto_log_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         username=user.username or "",
         full_name=user.full_name,
         level=role_name,
+        tipe_trx="-",
         keterangan=message.text,
         satuan="-",
-        jumlah="-"
+        jumlah="-",
+        detail=""
     )

@@ -11,4 +11,9 @@ async def setup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     filepath = await setup_excel(chat.id, chat.title)
-    await update.effective_message.reply_text(f"✅ Setup Selesai!\nLog: `{filepath}`", parse_mode="Markdown")
+    await update.effective_message.reply_text(
+        f"✅ **Grup Berhasil Diinisialisasi!**\n\n"
+        f"📌 **Nama File:** `{filepath}`\n"
+        f"File siap menampung data transaksi.",
+        parse_mode="Markdown"
+    )

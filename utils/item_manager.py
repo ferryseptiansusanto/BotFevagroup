@@ -1,8 +1,6 @@
 import json
 import os
-
-ITEMS_FILE = "database/items.json"
-
+from config.settings import ITEMS_FILE
 
 def load_items() -> list:
     if not os.path.exists(ITEMS_FILE):

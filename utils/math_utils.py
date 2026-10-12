@@ -14,7 +14,7 @@ def calculate_dimension(expression: str) -> tuple[str, str | None]:
                 total *= float(p)
 
             # Hilangkan desimal (.0) jika hasilnya adalah bilangan bulat utuh
-            result_str = str(int(total)) if total.is_integer() else str(total)
+            result_str = str(int(total)) if total.is_integer() else str(round(total, 4))
 
             # Kembalikan: ("24", "2 x 3 x 4")
             return result_str, expression.strip()

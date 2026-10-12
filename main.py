@@ -12,30 +12,37 @@ from handlers.admin_mgmt_handler import (
     help_command, reset_database_command
 )
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Registrasi Command
+    # Onboarding & Hak Akses
     app.add_handler(CommandHandler("setup", setup_command))
+    app.add_handler(CommandHandler("resetdatabase", reset_database_command))
     app.add_handler(CommandHandler("setrole", set_role_command))
     app.add_handler(CommandHandler("cekakses", check_role_command))
+    app.add_handler(CommandHandler("id", get_id_command))
+
+    # Transaksi & Saldo Barang
     app.add_handler(CommandHandler("tambah", add_command))
     app.add_handler(CommandHandler("edit", edit_command))
     app.add_handler(CommandHandler("hapus", delete_command))
-    app.add_handler(CommandHandler("getlogs", get_logs_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), auto_log_message))
-    app.add_handler(CommandHandler("id", get_id_command))
+
+    # Master Data Barang
     app.add_handler(CommandHandler("tambahbarang", add_item_command))
     app.add_handler(CommandHandler("editbarang", edit_item_command))
     app.add_handler(CommandHandler("hapusbarang", delete_item_command))
     app.add_handler(CommandHandler("listbarang", list_item_command))
-    app.add_handler(CommandHandler("resetdatabase", reset_database_command))
+    # Unduh Berkas
+    app.add_handler(CommandHandler("getlogs", get_logs_command))
+    app.add_handler(CommandHandler("rekap", rekap_command))
+
     # Daftarkan command help dan menu (mengarah ke fungsi yang sama)
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("menu", help_command))
-    app.add_handler(CommandHandler("rekap", rekap_command))
+
     logging.info("BotFevagroup Asynchronous berjalan...")
     app.run_polling()
 

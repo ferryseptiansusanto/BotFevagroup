@@ -16,8 +16,11 @@ def sanitize_filename(name: str) -> str:
 def load_registry() -> dict:
     if not os.path.exists(GROUP_REGISTRY_FILE):
         return {}
-    with open(GROUP_REGISTRY_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(GROUP_REGISTRY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 def save_registry(registry: dict):
     with open(GROUP_REGISTRY_FILE, "w", encoding="utf-8") as f:
@@ -38,7 +41,7 @@ async def setup_excel(chat_id: int, group_title: str) -> str:
             ws = wb.active
             ws.title = "Activity Logs"
             # HEADER FINAL: 9 Kolom (Termasuk Detail di ujung kanan)
-            ws.append(["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Keterangan", "Satuan", "Jumlah", "Detail"])
+            ws.append(["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Tipe", "Keterangan", "Satuan", "Jumlah", "Detail"])
             wb.save(filepath)
 
         registry[str(chat_id)] = filename
@@ -46,7 +49,7 @@ async def setup_excel(chat_id: int, group_title: str) -> str:
         return filepath
 
 
-async def append_data(chat_id: int, user_id: int, username: str, full_name: str, level: str, keterangan: str,
+async def append_data(chat_id: int, user_id: int, username: str, full_name: str, level: str, tipe_trx: str, keterangan: str,
                       satuan: str, jumlah: str, detail: str = "-") -> tuple[bool, int]:
     filepath = get_filepath(chat_id)
     if not filepath or not os.path.exists(filepath):
@@ -57,9 +60,9 @@ async def append_data(chat_id: int, user_id: int, username: str, full_name: str,
         ws = wb.active
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # MENYIMPAN KE 9 KOLOM: Termasuk variabel 'detail'
+        # MENYIMPAN KE 10 KOLOM: Termasuk variabel 'detail'
         ws.append(
-            [timestamp, str(user_id), f"@{username}" if username else "-", full_name, level, keterangan, satuan, jumlah,
+            [timestamp, str(user_id), f"@{username}" if username else "-", full_name, level, tipe_trx, keterangan, satuan, jumlah,
              detail])
         wb.save(filepath)
 
@@ -68,7 +71,7 @@ async def append_data(chat_id: int, user_id: int, username: str, full_name: str,
         return True, user_row_id
 
 
-async def edit_data(chat_id: int, row: int, keterangan: str, satuan: str, jumlah: str, detail: str,
+async def edit_data(chat_id: int, row: int, tipe_trx: str, keterangan: str, satuan: str, jumlah: str, detail: str,
                     require_same_day: bool = False) -> tuple[bool, str]:
     filepath = get_filepath(chat_id)
     if not filepath or not os.path.exists(filepath):
@@ -113,11 +116,12 @@ async def edit_data(chat_id: int, row: int, keterangan: str, satuan: str, jumlah
             except Exception:
                 return False, "Format tanggal pada baris tersebut tidak dapat divalidasi."
 
-        # EDIT 4 KOLOM UTAMA (Termasuk Detail di kolom ke-9)
-        ws.cell(row=excel_row, column=6, value=keterangan)
-        ws.cell(row=excel_row, column=7, value=satuan)
-        ws.cell(row=excel_row, column=8, value=jumlah)
-        ws.cell(row=excel_row, column=9, value=detail)
+        # EDIT 4 KOLOM UTAMA (Termasuk Detail di kolom ke-10)
+        ws.cell(row=excel_row, column=6, value=tipe_trx)
+        ws.cell(row=excel_row, column=7, value=keterangan)
+        ws.cell(row=excel_row, column=8, value=satuan)
+        ws.cell(row=excel_row, column=9, value=jumlah)
+        ws.cell(row=excel_row, column=10, value=detail)
         wb.save(filepath)
 
         return True, "Sukses"
@@ -164,7 +168,7 @@ async def reset_excel_data(chat_id: int) -> tuple[bool, str]:
 
             # 4. Tulis ulang Header format TERBARU (9 Kolom)
             ws.append(
-                ["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Keterangan", "Satuan", "Jumlah",
+                ["Timestamp", "User ID", "Username", "Nama Lengkap", "User Level", "Tipe","Keterangan", "Satuan", "Jumlah",
                  "Detail"])
 
             wb.save(filepath)
@@ -184,11 +188,11 @@ async def get_pivot_summary(chat_id: int) -> tuple[bool, dict | str]:
         ws = wb.active
 
         # Mulai dari baris ke-2 untuk melewati Header
-        for row_data in ws_log.iter_rows(min_row=2, min_col=6, max_col=8, values_only=True):
-            keterangan, satuan, jumlah = row_data
+        for row_data in ws.iter_rows(min_row=2, min_col=6, max_col=9, values_only=True):
+            tipe, keterangan, satuan, jumlah = row_data
 
             # Abaikan baris jika keterangan atau jumlah kosong
-            if not keterangan or jumlah is None:
+            if not keterangan or jumlah is None or not tipe:
                 continue
 
             # Konversi jumlah menjadi angka (float)
@@ -197,17 +201,13 @@ async def get_pivot_summary(chat_id: int) -> tuple[bool, dict | str]:
             except (ValueError, TypeError):
                 continue
 
-            keterangan_str = str(keterangan).strip()
-            satuan_str = str(satuan).strip() if satuan else "-"
+            key = (str(keterangan).strip(), str(satuan).strip() if satuan else "-")
+            if key not in summary:
+                summary[key] = {"IN": 0.0, "OUT": 0.0}
 
-            # Buat kunci gabungan Keterangan dan Satuan (misal: "aggra-kanan (ton)")
-            item_key = f"{keterangan_str} ({satuan_str})"
-
-            # Tambahkan ke dictionary
-            if item_key not in summary:
-                summary[item_key] = 0.0
-
-            summary[item_key] += jumlah_float
+            t_up = str(tipe).strip().upper()
+            if t_up in ["IN", "OUT"]:
+                summary[key][t_up] += jumlah_float
 
     return True, summary
 
@@ -223,14 +223,14 @@ async def generate_export_file(chat_id: int) -> tuple[bool, str]:
         try:
             shutil.copy2(filepath, export_path)
 
-            wb = load_workbook(export_path)
+            wb = load_workbook(export_path, data_only=True)
             ws_log = wb.active
             summary = {}
 
-            for row_data in ws_log.iter_rows(min_row=2, min_col=6, max_col=8, values_only=True):
-                keterangan, satuan, jumlah = row_data
+            for row_data in ws_log.iter_rows(min_row=2, min_col=6, max_col=9, values_only=True):
+                tipe, keterangan, satuan, jumlah = row_data
 
-                if not keterangan or jumlah is None:
+                if not keterangan or jumlah is None or not tipe:
                     continue
 
                 try:
@@ -238,25 +238,28 @@ async def generate_export_file(chat_id: int) -> tuple[bool, str]:
                 except (ValueError, TypeError):
                     continue
 
-                keterangan_str = str(keterangan).strip()
-                satuan_str = str(satuan).strip() if satuan else "-"
-                item_key = (keterangan_str, satuan_str)
-
-                if item_key not in summary:
-                    summary[item_key] = 0.0
-                summary[item_key] += jumlah_float
+                key = (str(keterangan).strip(), str(satuan).strip() if satuan else "-")
+                if key not in summary:
+                    summary[key] = {"IN": 0.0, "OUT": 0.0}
+                t_up = str(tipe).strip().upper()
+                if t_up in ["IN", "OUT"]:
+                    summary[key][t_up] += jumlah_float
 
             if "Rekap" in wb.sheetnames:
                 del wb["Rekap"]
 
             ws_rekap = wb.create_sheet(title="Rekap")
-            ws_rekap.append(["No", "Kode Barang", "Satuan", "Total Jumlah"])
+            ws_rekap.append(["No", "Kode Barang", "Satuan", "Total Masuk (IN)", "Total Keluar (OUT)", "Sisa Saldo"])
 
             sorted_keys = sorted(summary.keys(), key=lambda x: x[0].lower())
             for index, (ket, sat) in enumerate(sorted_keys, start=1):
-                total = summary[(ket, sat)]
-                total_val = int(total) if total.is_integer() else total
-                ws_rekap.append([index, ket, sat, total_val])
+                in_val = summary[(ket, sat)]["IN"]
+                out_val = summary[(ket, sat)]["OUT"]
+                sisa_val = in_val - out_val
+
+                def fmt(v): return int(v) if v.is_integer() else round(v, 2)
+
+                ws_rekap.append([index, ket, sat, fmt(in_val), fmt(out_val), fmt(sisa_val)])
 
             wb.save(export_path)
             wb.close()
