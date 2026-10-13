@@ -1,1 +1,4 @@
-.env, venv/, .idea/, dan data_logs/*.xlsx
+.env
+venv/
+.idea/
+data_logs/*.xlsx
